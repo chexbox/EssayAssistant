@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Lato&display=swap');
+      :root {
+        --bg-color: white;
+        --text: black;
+        --contrast: #101010;
+        --bg-contrast: #d0d0d0;/* contrast and bg contrast should actually have less contrast */
+        --accent: #59405c;
+      }
+    
+      html, body { 
+        padding: 0; 
+        margin: 0; 
+        background-color: var(--bg-color);
+        color: var(--text);
+        font-family: 'Lato', sans-serif;
+        
+      }
+      main { padding: 0; margin: 0; min-height: calc(100vh - 4em) }
+      div { padding: 0.25em 0.25em; margin: 0.5em 0em; }
+      a { color: var(--accent); }
+      h3 {
+        margin: 0.25em 0.25em;
+      }
+      span {
+        font-size: 0.8em;
+        color: var(--contrast);
+      }
+      h3 span {
+        font-weight: normal;
+      }
+
+      button, select {
+        /*border-radius: 0.25em;
+        border: 1px solid var(--contrast);
+        background-color: var(--bg-color);*/
+        padding: 0.25em 0.5em;
+        /*color: var(--text);*/
+      }
+      
+      
+      #timeDisp::after {
+        content: "s";
+      }
+
+      #tempDisp::after {
+        content: "°";
+      }
+
+      #recommended {
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      #recommended  li {
+        cursor: pointer;
+        padding: 0 0.25em;
+        margin: 0.25em 0;
+        border-left: 1px solid var(--bg-contrast);
+      }
+
+      #recommended  li:hover {
+        /*text-shadow: 0 2px 4px var(--text);*/
+        border-left: 1px solid var(--contrast);
+      }
+
+      footer {
+        border-top: 1px solid var(--bg-contrast);
+        padding: 0.25em 0.25em;
+        margin: 0.5em 0em;
+        font-size: 0.75em;
+        color: var(--contrast);
+      }
+    </style>
+    <script>
+      // this needs to send input data to the google apps script to fetch the data
+      // or I could fetch the data from this html and insert it with the apps script
+    
+      // this might become more object oriented at some point
+
+
+      var latestGrab = ""
+
+      function xhr(method, url, contentType, content, responseFunction) {//make xhr easy
+        let xhttp = new XMLHttpRequest();
+        xhttp.onreadystatechange = function() {
+          if (this.readyState == 4) {
+            // Typical action to be performed when the document is ready:
+            responseFunction(this);
+          }
+        };
+        xhttp.open(method, url, true);
+        xhttp.setRequestHeader('Content-Type', contentType);
+        xhttp.send(content);
+      }
+      
+      function fillWeather(xresponse) {//not needed, just test code
+        console.log("response gott");
+        document.getElementById("test").innerHTML = JSON.parse(xresponse.responseText).properties.temperature.value;
+      }
+      
+
+      function requestAi(docText){
+        latestGrab = docText
+        let url = "https://transformer.huggingface.co/autocomplete/" + document.getElementById("AiType").value; //gpt2/large
+        let payload = {
+          "context": docText,
+          "model_size": document.getElementById("AiType").value,
+          "top_p": parseInt(document.getElementById("topP").value),
+          "temperature": parseInt(document.getElementById("temp").value),
+          "max_time": parseInt(document.getElementById("maxTime").value)
+        }
+        xhr('POST', url, 'application/json', JSON.stringify(payload), showOptions);
+      }
+      
+      
+      function showOptions(xresponse) {
+        document.getElementById("recommended").innerHTML = "";
+        JSON.parse(xresponse.responseText).sentences.forEach((sentence) => { 
+          let button = document.createElement("li") 
+          button.innerHTML = sentence.value.replace("\n", "↵");//there is some awful xss/code-injection risk here
+          button.name = sentence.value;
+          button.onclick = appendLine;
+          document.getElementById("recommended").appendChild(button);
+          //document.getElementById("recommended").appendChild(document.createElement("br"))
+        })
+        
+      }
+      
+      function getAutoComplete() {
+        google.script.run.withSuccessHandler(requestAi).getDocText()
+      }
+      
+      function pageInit(){
+        document.getElementById("maxTime").addEventListener('change', (e) => { 
+          document.getElementById("timeDisp").innerHTML = e.target.value;
+        });
+        document.getElementById("topP").addEventListener('change', (e) => { 
+          document.getElementById("repDisp").innerHTML = e.target.value;
+        });
+        document.getElementById("temp").addEventListener('change', (e) => { 
+          document.getElementById("tempDisp").innerHTML = e.target.value;
+        });
+      }
+      
+      function retryAi(){
+        requestAi(latestGrab);
+      }
+      
+      function appendLine(e){
+        latestGrab = latestGrab + e.target.name;
+        google.script.run.withSuccessHandler(retryAi).appendAtDocEnd(e.target.name);
+      }
+      
+    </script>
+  </head>
+  <body onload="pageInit()">
+    <main>
+    <div>
+      <h3>Choose AI</h3>
+      <select id="AiType" name="ai_type">
+        <option value="gpt2/small">GPT-2 Small</option>
+        <option value="gpt2/medium">GPT-2 Medium</option>
+        <option value="gpt2/large" selected>GPT-2 Large</option>
+      </select>
+    </div>
+    <div>
+      <h3>
+      Max Time: <span id="timeDisp">1</span></h3>
+      1s <input type="range" min="1" max="5" step="0.01" value="1" id="maxTime"> 5s
+    </div>
+    <div>
+      <h3>
+      Repetition Penalty: <span id="repDisp">0.9</span></h3>
+      Allow<input type="range" min="0" max="1" step="0.005" value="0.9" id="topP">Supress
+    </div>
+    <div>
+      <h3>
+      Temperature: <span id="tempDisp">1</span></h3>
+      Mild<input type="range" min="0" max="5" step="0.01" value="1" id="temp">Spicy
+    </div>
+    <div>
+      <!-- curl 'https://transformer.huggingface.co/autocomplete/gpt2/large' --compressed -H 'Referer: https://transformer.huggingface.co/doc/gpt2-large' -H 'Content-Type: application/json' -H 'Origin: https://transformer.huggingface.co' -H 'Connection: keep-alive' -H 'Cookie: __stripe_mid=53dbeddf-7665-4acf-832c-bfa8dd486a593fe230; __stripe_sid=df299496-78e5-43f6-81df-bb2587750195d29763' --data-raw '{"context":"Test Text","model_size":"gpt2/large","top_p":0.9,"temperature":1,"max_time":1}' -->
+      <!--<button onclick="google.script.run.appendAtDocEnd('line')">Add Line</button><br>-->
+      <button onclick="getAutoComplete()">Get Recommendations</button>
+      <span title="Reuse previous text"><button onclick="retryAi()">↻</button></span>
+    </div>
+    <div><!-- There is a painful use of both "recommended" and "suggested" that I don't feel like resolving right now -->
+      <h3>Suggestions:</h3>
+      <ul id="recommended">
+        <li>After you get suggestions, they will appear here</li>
+        <li>Unfortunately, right now, the AI can only read and append to the end of the document.</li>
+      </ul>
+    </div>
+    </main>
+    <footer>©2020 <a href="https://www.github.com/chexbox">Chexbox</a>. API and AI data from <a href="https://github.com/huggingface/transformers/">Huggingface</a></footer>
+  </body>
+</html>
